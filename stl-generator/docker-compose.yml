@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: stl_postgres
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: stl_generator
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - stl_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: stl_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - stl_network
+
+  minio:
+    image: minio/minio:latest
+    container_name: stl_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - stl_network
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  stl_network:
+    driver: bridge

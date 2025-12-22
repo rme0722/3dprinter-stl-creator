@@ -51,7 +51,7 @@ async def create_job(
     return db_job
 
 
-@router.get("/{job_id}", response_model=JobResponse)
+@router.get("/jobs/{job_id}", response_model=JobResponse)
 async def get_job(
     job_id: str,
     db: AsyncSession = Depends(get_db)
@@ -66,7 +66,7 @@ async def get_job(
     return job
 
 
-@router.patch("/{job_id}", response_model=JobResponse)
+@router.patch("/jobs/{job_id}", response_model=JobResponse)
 async def update_job(
     job_id: str,
     job_update: JobUpdate,
@@ -96,7 +96,7 @@ async def update_job(
     return job
 
 
-@router.post("/{job_id}/submit", response_model=JobResponse)
+@router.post("/jobs/{job_id}/submit", response_model=JobResponse)
 async def submit_job(
     job_id: str,
     db: AsyncSession = Depends(get_db)
@@ -126,7 +126,7 @@ async def submit_job(
     return job
 
 
-@router.post("/{job_id}/cancel", response_model=JobResponse)
+@router.post("/jobs/{job_id}/cancel", response_model=JobResponse)
 async def cancel_job(
     job_id: str,
     db: AsyncSession = Depends(get_db)
@@ -152,7 +152,7 @@ async def cancel_job(
     return job
 
 
-@router.post("/{job_id}/resume", response_model=JobResponse)
+@router.post("/jobs/{job_id}/resume", response_model=JobResponse)
 async def resume_job(
     job_id: str,
     action_data: Optional[dict] = None,

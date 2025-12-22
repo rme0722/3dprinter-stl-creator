@@ -86,11 +86,11 @@ export const api = {
   
   jobs: {
     list: async (projectId: string): Promise<Job[]> => {
-      const { data } = await apiClient.get(`/projects/${projectId}/jobs`)
+      const { data } = await apiClient.get(`/projects/${projectId}/jobs/`)
       return data
     },
     get: async (jobId: string): Promise<Job> => {
-      const { data } = await apiClient.get(`/jobs/${jobId}`)
+      const { data } = await apiClient.get(`/jobs/${jobId}/`)
       return data
     },
     create: async (projectId: string, job: {
@@ -99,7 +99,7 @@ export const api = {
       model_preset_id?: string
       config?: Record<string, any>
     }): Promise<Job> => {
-      const { data } = await apiClient.post(`/projects/${projectId}/jobs`, job)
+      const { data } = await apiClient.post(`/projects/${projectId}/jobs/`, job)
       return data
     },
     submit: async (jobId: string): Promise<Job> => {

@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pydantic.config import ConfigDict
 from app.models.artifact import ArtifactType, ArtifactFormat
 
 
@@ -25,9 +26,8 @@ class ArtifactResponse(ArtifactBase):
     sha256: str
     size_bytes: int
     version: int
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = Field(default=None, validation_alias="metadata_json")
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)

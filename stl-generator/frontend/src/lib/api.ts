@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api/v1'
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -64,7 +64,7 @@ export interface Artifact {
 export const api = {
   projects: {
     list: async (): Promise<Project[]> => {
-      const { data } = await apiClient.get('/projects')
+      const { data } = await apiClient.get('/projects/')
       return data
     },
     get: async (id: string): Promise<Project> => {
@@ -72,7 +72,7 @@ export const api = {
       return data
     },
     create: async (project: { name: string; description?: string }): Promise<Project> => {
-      const { data } = await apiClient.post('/projects', project)
+      const { data } = await apiClient.post('/projects/', project)
       return data
     },
     update: async (id: string, project: Partial<Project>): Promise<Project> => {

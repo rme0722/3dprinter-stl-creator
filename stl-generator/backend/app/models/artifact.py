@@ -69,7 +69,9 @@ class Artifact(Base, IdMixin, TimestampMixin):
     label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     
     # Metadata (dimensions, units, triangle count, etc.)
-    metadata: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[Optional[Dict[str, Any]]] = mapped_column(
+        "metadata", JSON, nullable=True
+    )
     
     # Relationships
     job: Mapped["Job"] = relationship("Job", back_populates="artifacts")

@@ -158,7 +158,7 @@ class ReliefPipeline:
             uri=f"jobs/{self.job_id}/depth_map.png",
             sha256=hashlib.sha256(depth_map.tobytes()).hexdigest(),
             size_bytes=depth_map.nbytes,
-            metadata={"width": 256, "height": 256, "max_depth_mm": 10}
+            metadata_json={"width": 256, "height": 256, "max_depth_mm": 10}
         )
         self.db.add(depth_artifact)
         await self.db.commit()
@@ -235,7 +235,7 @@ class ReliefPipeline:
             uri=f"jobs/{self.job_id}/mesh_cleaned.ply",
             sha256=hashlib.sha256(mesh.export(file_type='ply')).hexdigest(),
             size_bytes=len(mesh.export(file_type='ply')),
-            metadata={
+            metadata_json={
                 "vertices": len(mesh.vertices),
                 "faces": len(mesh.faces),
                 "watertight": mesh.is_watertight
@@ -275,7 +275,7 @@ class ReliefPipeline:
             uri=f"jobs/{self.job_id}/mesh_scaled.ply",
             sha256=hashlib.sha256(mesh.export(file_type='ply')).hexdigest(),
             size_bytes=len(mesh.export(file_type='ply')),
-            metadata={
+            metadata_json={
                 "scale_preset": target_scale,
                 "dimensions_mm": mesh.extents.tolist(),
                 "scale_factor": scale_factor
@@ -346,7 +346,7 @@ class ReliefPipeline:
             uri=f"jobs/{self.job_id}/final.stl",
             sha256=hashlib.sha256(stl_bytes).hexdigest(),
             size_bytes=len(stl_bytes),
-            metadata={
+            metadata_json={
                 "vertices": len(mesh.vertices),
                 "faces": len(mesh.faces),
                 "dimensions_mm": mesh.extents.tolist(),

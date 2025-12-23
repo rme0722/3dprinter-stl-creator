@@ -46,7 +46,7 @@ def test_scan_pipeline():
         "name": "Scan Test Project",
         "description": "Automated test project"
     })
-    if resp.status_code != 200:
+    if resp.status_code not in [200, 201]:
         print(f"Failed to create project: {resp.text}")
         return
     project = resp.json()
@@ -55,11 +55,11 @@ def test_scan_pipeline():
     
     # 2. Create Scan Job
     print("\n2. Creating Scan Job...")
-    resp = requests.post(f"{API_URL}/projects/{project_id}/jobs/", json={
+    resp = requests.post(f"{API_URL}/projects/{project_id}/jobs", json={
         "pipeline_type": "SCAN",
         "printer_profile_id": "pp_default_fdm"
     })
-    if resp.status_code != 200:
+    if resp.status_code not in [200, 201]:
         print(f"Failed to create job: {resp.text}")
         return
     job = resp.json()

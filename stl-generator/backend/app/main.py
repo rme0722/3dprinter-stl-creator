@@ -27,10 +27,12 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Log clearing on startup
     log_path = Path('debug.log')
     if log_path.exists():
-        log_path.unlink()
+        try:
+            log_path.unlink()
+        except Exception:
+            pass
         
     # Startup
     async with engine.begin() as conn:

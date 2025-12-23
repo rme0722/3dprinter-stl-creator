@@ -12,6 +12,8 @@ venv.bak/
 .pytest_cache/
 .coverage
 *.log
+*/venv/
+*\venv\
 
 # Node.js
 node_modules/
@@ -56,5 +58,7 @@ static/
 media/
 
 # Alembic
-alembic/versions/*.py
-!alembic/versions/.gitkeep
+**/alembic/versions/*.py
+!**/alembic/versions/.gitkeep
+
+

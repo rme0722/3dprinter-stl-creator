@@ -6,13 +6,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  ArrowLeft, 
-  Play, 
-  XCircle, 
-  Clock, 
-  CheckCircle, 
-  AlertCircle, 
+import {
+  ArrowLeft,
+  Play,
+  XCircle,
+  Clock,
+  CheckCircle,
+  AlertCircle,
   Loader2,
   ImageIcon,
   Sparkles,
@@ -84,29 +84,43 @@ export default function JobPage() {
   const queryClient = useQueryClient()
   const projectId = params.id as string
   const jobId = params.jobId as string
-  
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([])
+  const [filePreviews, setFilePreviews] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setSelectedFile(file)
-      const url = URL.createObjectURL(file)
-      setPreviewUrl(url)
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files)
+      setSelectedFiles(prev => [...prev, ...newFiles])
+
+      // Create previews for new files
+      const newPreviews = newFiles.map(file => URL.createObjectURL(file))
+      setFilePreviews(prev => [...prev, ...newPreviews])
     }
   }
 
-  const handleRemoveFile = () => {
-    setSelectedFile(null)
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl)
-      setPreviewUrl(null)
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index))
+
+    // Revoke URL to avoid memory leaks
+    if (filePreviews[index]) {
+      URL.revokeObjectURL(filePreviews[index])
     }
+    setFilePreviews(prev => prev.filter((_, i) => i !== index))
+
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
+  }
+
+  const clearAllFiles = () => {
+    selectedFiles.forEach((_, i) => {
+      if (filePreviews[i]) URL.revokeObjectURL(filePreviews[i])
+    })
+    setSelectedFiles([])
+    setFilePreviews([])
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
   const { data: job, isLoading: jobLoading } = useQuery({
@@ -127,10 +141,11 @@ export default function JobPage() {
     queryFn: () => api.artifacts.list(jobId),
     enabled: !!job,
     // Refetch when job completes to get output artifacts
-    refetchInterval: job?.state === 'SUCCEEDED' ? false : 
+    refetchInterval: job?.state === 'SUCCEEDED' ? false :
       ['SUBMITTED', 'VALIDATING', 'QUEUED', 'RUNNING'].includes(job?.state || '') ? 3000 : false,
   })
 
+  const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number } | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
@@ -149,20 +164,37 @@ export default function JobPage() {
 
   const submitMutation = useMutation({
     mutationFn: async () => {
-      console.log('Submit mutation starting, selectedFile:', selectedFile)
+      console.log('Submit mutation starting, files:', selectedFiles.length)
       setSubmitError(null)
-      // Upload file first if one is selected
-      if (selectedFile) {
-        console.log('Uploading file:', selectedFile.name, selectedFile.size)
+
+      // Upload files first if selected
+      if (selectedFiles.length > 0) {
         setIsUploading(true)
+        setUploadProgress({ current: 0, total: selectedFiles.length })
+
         try {
-          const result = await uploadMutation.mutateAsync(selectedFile)
-          console.log('Upload result:', result)
+          // Upload sequentially to avoid overwhelming browser/connection
+          // Could implement concurrent batches (e.g. 5 at a time) for speed
+          for (let i = 0; i < selectedFiles.length; i++) {
+            const file = selectedFiles[i]
+            console.log(`Uploading file ${i + 1}/${selectedFiles.length}: ${file.name}`)
+
+            // Determine artifact type based on pipeline
+            // SCAN pipeline uses RAW_PHOTO for inputs
+            const artifactType = job?.pipeline_type === 'SCAN' ? 'RAW_PHOTO' : 'RAW_IMAGE'
+
+            await api.uploads.uploadFile(jobId, file, artifactType)
+            setUploadProgress({ current: i + 1, total: selectedFiles.length })
+          }
+        } catch (error) {
+          console.error("Upload failed", error)
+          throw error
         } finally {
           setIsUploading(false)
+          setUploadProgress(null)
         }
       } else {
-        console.log('No file selected for upload')
+        console.log('No new files selected for upload (assuming previously uploaded)')
       }
       // Then submit the job
       console.log('Submitting job:', jobId)
@@ -174,11 +206,7 @@ export default function JobPage() {
       console.log('Submit successful, invalidating queries')
       queryClient.invalidateQueries({ queryKey: ['job', jobId] })
       queryClient.invalidateQueries({ queryKey: ['artifacts', jobId] })
-      setSelectedFile(null)
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl)
-        setPreviewUrl(null)
-      }
+      clearAllFiles()
     },
     onError: (error: Error) => {
       console.error('Submit error:', error)
@@ -235,8 +263,8 @@ export default function JobPage() {
   return (
     <div className="container mx-auto py-8">
       <div className="mb-6">
-        <Link 
-          href={`/projects/${projectId}`} 
+        <Link
+          href={`/projects/${projectId}`}
           className="text-muted-foreground hover:text-foreground inline-flex items-center mb-4"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
@@ -255,10 +283,10 @@ export default function JobPage() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex gap-2">
             {canSubmit && (
-              <Button 
+              <Button
                 onClick={() => submitMutation.mutate()}
                 disabled={submitMutation.isPending || isUploading}
               >
@@ -267,11 +295,16 @@ export default function JobPage() {
                 ) : (
                   <Play className="mr-2 h-4 w-4" />
                 )}
-                {isUploading ? 'Uploading...' : 'Submit Job'}
+                )}
+                {isUploading ? (
+                  uploadProgress
+                    ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...`
+                    : 'Uploading...'
+                ) : 'Submit Job'}
               </Button>
             )}
             {canCancel && (
-              <Button 
+              <Button
                 variant="outline"
                 onClick={() => cancelMutation.mutate()}
                 disabled={cancelMutation.isPending}
@@ -356,61 +389,80 @@ export default function JobPage() {
                   onChange={handleFileSelect}
                   accept="image/jpeg,image/png,image/webp"
                   className="hidden"
+                  multiple={job.pipeline_type === 'SCAN'} // Enable multiple for SCAN
                   aria-label="Select image file"
                 />
-                
-                {!selectedFile ? (
-                  <div 
+
+                {selectedFiles.length === 0 ? (
+                  <div
                     className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-8 text-center cursor-pointer hover:border-muted-foreground/50 transition-colors"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Upload className="h-10 w-10 mx-auto text-muted-foreground mb-4" />
                     <p className="text-sm text-muted-foreground mb-2">
-                      Drag and drop your image here, or click to browse
+                      Drag and drop your image{job.pipeline_type === 'SCAN' ? 's' : ''} here, or click to browse
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Supported formats: JPG, PNG, WebP (max 100MB)
+                      {job.pipeline_type === 'SCAN'
+                        ? 'Recommended: 30+ photos for best results'
+                        : 'Supported formats: JPG, PNG, WebP (max 100MB)'}
                     </p>
                     <Button variant="outline" className="mt-4" type="button">
-                      Select File
+                      Select File{job.pipeline_type === 'SCAN' ? 's' : ''}
                     </Button>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="relative border rounded-lg overflow-hidden">
-                      {previewUrl && (
-                        <img 
-                          src={previewUrl} 
-                          alt="Preview" 
-                          className="w-full h-48 object-contain bg-muted"
-                        />
-                      )}
-                      <button
-                        onClick={handleRemoveFile}
-                        className="absolute top-2 right-2 p-1 bg-black/50 rounded-full text-white hover:bg-black/70"
-                        aria-label="Remove file"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
-                      <FileImage className="h-8 w-8 text-muted-foreground" />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{selectedFile.name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                        </p>
+                    {/* Validation Warning for SCAN */}
+                    {job.pipeline_type === 'SCAN' && selectedFiles.length < 2 && (
+                      <div className="flex items-center gap-2 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>At least 2 photos are required for photogrammetry.</span>
                       </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        Change
-                      </Button>
+                    )}
+                    {job.pipeline_type === 'SCAN' && selectedFiles.length >= 2 && selectedFiles.length < 30 && (
+                      <div className="flex items-center gap-2 p-3 bg-yellow-100 text-yellow-700 rounded-lg text-sm">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>Recommended: 30+ photos for high detail (Selected: {selectedFiles.length}).</span>
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">{selectedFiles.length} file{selectedFiles.length !== 1 ? 's' : ''} selected</span>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={clearAllFiles}>Clear All</Button>
+                        <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>Add More</Button>
+                      </div>
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      Click &quot;Submit Job&quot; above to start processing this image.
+
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-h-96 overflow-y-auto pr-2">
+                      {selectedFiles.map((file, index) => (
+                        <div key={index} className="relative border rounded-lg overflow-hidden group">
+                          {filePreviews[index] && (
+                            <img
+                              src={filePreviews[index]}
+                              alt="Preview"
+                              className="w-full h-32 object-cover bg-muted"
+                            />
+                          )}
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button
+                              onClick={() => handleRemoveFile(index)}
+                              className="p-1 bg-red-500 rounded-full text-white hover:bg-red-600"
+                              title="Remove"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <div className="p-2 text-xs truncate bg-background/90 absolute bottom-0 w-full">
+                            {file.name}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <p className="text-sm text-muted-foreground text-center">
+                      Click &quot;Submit Job&quot; above to start processing.
                     </p>
                   </div>
                 )}
@@ -432,8 +484,8 @@ export default function JobPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="h-80 rounded-lg overflow-hidden">
-                    <STLViewer 
-                      modelUrl={api.uploads.getDownloadUrl(stlArtifact.id)} 
+                    <STLViewer
+                      modelUrl={api.uploads.getDownloadUrl(stlArtifact.id)}
                       className="h-full"
                     />
                   </div>
@@ -454,7 +506,7 @@ export default function JobPage() {
               <CardContent>
                 <div className="space-y-3">
                   {artifacts.map((artifact) => (
-                    <div 
+                    <div
                       key={artifact.id}
                       className="flex items-center justify-between p-3 bg-muted rounded-lg"
                     >
@@ -464,7 +516,7 @@ export default function JobPage() {
                           {artifact.format.toUpperCase()} • {(artifact.size_bytes / 1024 / 1024).toFixed(2)} MB
                         </p>
                       </div>
-                      <a 
+                      <a
                         href={api.uploads.getDownloadUrl(artifact.id)}
                         download
                       >
@@ -491,15 +543,14 @@ export default function JobPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-center">
-                  <div className={`text-4xl font-bold ${
-                    job.quality_score >= 0.8 ? 'text-green-500' :
-                    job.quality_score >= 0.6 ? 'text-yellow-500' : 'text-red-500'
-                  }`}>
+                  <div className={`text-4xl font-bold ${job.quality_score >= 0.8 ? 'text-green-500' :
+                      job.quality_score >= 0.6 ? 'text-yellow-500' : 'text-red-500'
+                    }`}>
                     {(job.quality_score * 100).toFixed(0)}%
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
                     {job.quality_score >= 0.8 ? 'Great' :
-                     job.quality_score >= 0.6 ? 'Good' : 'Needs Improvement'}
+                      job.quality_score >= 0.6 ? 'Good' : 'Needs Improvement'}
                   </p>
                 </div>
                 {job.quality_summary && (

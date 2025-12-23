@@ -105,6 +105,8 @@ class LocalWorker:
             
             if job.pipeline_type == "RELIEF":
                 await self._process_relief_job(db, job)
+            elif job.pipeline_type == "SCAN":
+                await self._process_scan_job(db, job)
             else:
                 raise ValueError(f"Unsupported pipeline type: {job.pipeline_type}")
             
@@ -212,6 +214,13 @@ class LocalWorker:
         db.add(artifact)
         await db.commit()
         print(f"  Job {job.id}: Created artifact {artifact.id}")
+
+    async def _process_scan_job(self, db: AsyncSession, job: Job):
+        """Process a scan pipeline job - multi-photo photogrammetry."""
+        from app.workers.scan_pipeline import ScanPipeline
+        print(f"  Job {job.id}: Starting ScanPipeline...")
+        pipeline = ScanPipeline(job.id, db)
+        await pipeline.run()
     
     def _generate_relief_from_image(self, img) -> bytes:
         """Generate a relief STL from a grayscale PIL Image.

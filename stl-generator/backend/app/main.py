@@ -3,7 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 import time
+import logging
+import time
 import json
+from pathlib import Path
 
 from app.core.config import settings
 from app.api.v1.api import api_router
@@ -24,6 +27,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Log clearing on startup
+    log_path = Path('debug.log')
+    if log_path.exists():
+        log_path.unlink()
+        
     # Startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

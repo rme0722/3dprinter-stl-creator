@@ -1,44 +1,67 @@
 'use client'
 
-import { useRef, useEffect, Suspense } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { OrbitControls, useGLTF, PerspectiveCamera, Grid, Environment } from '@react-three/drei'
-import { Mesh } from 'three'
+import { OrbitControls, PerspectiveCamera, Grid, Environment } from '@react-three/drei'
 import * as THREE from 'three'
+import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 
 interface ModelProps {
   url: string
 }
 
-function Model({ url }: ModelProps) {
-  const { scene } = useGLTF(url)
+function STLModel({ url }: ModelProps) {
+  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null)
+  const [error, setError] = useState<string | null>(null)
   
   useEffect(() => {
-    // Center and scale the model
-    const box = new THREE.Box3().setFromObject(scene)
-    const center = box.getCenter(new THREE.Vector3())
-    const size = box.getSize(new THREE.Vector3())
+    if (!url) return
     
-    const maxDim = Math.max(size.x, size.y, size.z)
-    const scale = 10 / maxDim
-    
-    scene.position.sub(center)
-    scene.scale.multiplyScalar(scale)
-    
-    // Apply material to all meshes
-    scene.traverse((child) => {
-      if ((child as Mesh).isMesh) {
-        const mesh = child as Mesh
-        mesh.material = new THREE.MeshPhongMaterial({
-          color: 0x888888,
-          specular: 0x111111,
-          shininess: 200,
-        })
+    const loader = new STLLoader()
+    loader.load(
+      url,
+      (loadedGeometry) => {
+        // Center the geometry
+        loadedGeometry.center()
+        loadedGeometry.computeBoundingBox()
+        
+        // Scale to fit
+        const box = loadedGeometry.boundingBox
+        if (box) {
+          const size = new THREE.Vector3()
+          box.getSize(size)
+          const maxDim = Math.max(size.x, size.y, size.z)
+          const scale = 10 / maxDim
+          loadedGeometry.scale(scale, scale, scale)
+        }
+        setGeometry(loadedGeometry)
+        setError(null)
+      },
+      undefined,
+      (err) => {
+        console.error('STL load error:', err)
+        setError('Failed to load 3D model')
       }
-    })
-  }, [scene])
+    )
+  }, [url])
   
-  return <primitive object={scene} />
+  if (error) {
+    return null
+  }
+  
+  if (!geometry) {
+    return null
+  }
+  
+  return (
+    <mesh geometry={geometry}>
+      <meshPhongMaterial 
+        color={0x888888}
+        specular={0x111111}
+        shininess={200}
+      />
+    </mesh>
+  )
 }
 
 interface STLViewerProps {
@@ -59,7 +82,7 @@ export function STLViewer({ modelUrl, className = '' }: STLViewerProps) {
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1} />
         <Suspense fallback={null}>
-          <Model url={modelUrl} />
+          <STLModel url={modelUrl} />
         </Suspense>
         <Grid 
           args={[20, 20]} 

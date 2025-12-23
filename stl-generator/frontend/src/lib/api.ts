@@ -86,11 +86,11 @@ export const api = {
   
   jobs: {
     list: async (projectId: string): Promise<Job[]> => {
-      const { data } = await apiClient.get(`/projects/${projectId}/jobs/`)
+      const { data } = await apiClient.get(`/projects/${projectId}/jobs`)
       return data
     },
     get: async (jobId: string): Promise<Job> => {
-      const { data } = await apiClient.get(`/jobs/${jobId}/`)
+      const { data } = await apiClient.get(`/jobs/${jobId}`)
       return data
     },
     create: async (projectId: string, job: {
@@ -99,11 +99,11 @@ export const api = {
       model_preset_id?: string
       config?: Record<string, any>
     }): Promise<Job> => {
-      const { data } = await apiClient.post(`/projects/${projectId}/jobs/`, job)
+      const { data } = await apiClient.post(`/projects/${projectId}/jobs`, job)
       return data
     },
     submit: async (jobId: string): Promise<Job> => {
-      const { data } = await apiClient.post(`/jobs/${jobId}/submit`)
+      const { data } = await apiClient.post(`/jobs/${jobId}/submit`, {})
       return data
     },
     cancel: async (jobId: string): Promise<Job> => {
@@ -149,11 +149,40 @@ export const api = {
         artifact_id: string
       }>
     }> => {
-      const { data } = await apiClient.post('/uploads', params)
+      const { data } = await apiClient.post('/uploads/', params)
       return data
     },
     completeSession: async (sessionId: string, jobId: string): Promise<void> => {
-      await apiClient.post(`/uploads/${sessionId}/complete`, { job_id: jobId })
+      await apiClient.post(`/uploads/${sessionId}/complete/`, { job_id: jobId })
+    },
+    uploadFile: async (jobId: string, file: File, artifactType: string = 'RAW_IMAGE'): Promise<{
+      artifact_id: string
+      filename: string
+      size_bytes: number
+      uri: string
+    }> => {
+      console.log('API uploadFile called with:', { jobId, file: file?.name, size: file?.size, artifactType })
+      
+      if (!file) {
+        throw new Error('No file provided to upload')
+      }
+      
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('artifact_type', artifactType)
+      
+      console.log('FormData contents:', Array.from(formData.entries()))
+      
+      // Remove Content-Type header to let axios set multipart/form-data with boundary
+      const { data } = await apiClient.post(`/uploads/file/${jobId}`, formData, {
+        headers: {
+          'Content-Type': undefined,
+        },
+      })
+      return data
+    },
+    getDownloadUrl: (artifactId: string): string => {
+      return `${API_BASE_URL}/uploads/file/${artifactId}/download`
     },
   },
 }

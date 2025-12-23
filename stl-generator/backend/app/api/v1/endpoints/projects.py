@@ -3,33 +3,51 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import uuid
+import logging
 
 from app.db.database import get_db
 from app.models import Project
 from app.schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_project(
     project: ProjectCreate,
     db: AsyncSession = Depends(get_db)
 ) -> Project:
     """Create a new project"""
+    logger.info(f"=== CREATE PROJECT ENDPOINT ===")
+    logger.info(f"Project data: {project}")
+    
+    logger.info("Creating project object...")
     db_project = Project(
         id=f"proj_{uuid.uuid4().hex[:12]}",
         user_id="user_demo",  # TODO: Get from auth
         name=project.name,
         description=project.description
     )
+    logger.info(f"Project object created with ID: {db_project.id}")
+    
+    logger.info("Adding project to database...")
     db.add(db_project)
+    
+    logger.info("Committing to database...")
     await db.commit()
+    
+    logger.info("Refreshing project object...")
     await db.refresh(db_project)
+    
+    logger.info("Project creation completed successfully")
     return db_project
 
 
 @router.get("/", response_model=List[ProjectResponse])
+@router.get("", response_model=List[ProjectResponse])
 async def list_projects(
     skip: int = 0,
     limit: int = 100,

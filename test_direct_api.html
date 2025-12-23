@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Direct API Test</title>
+</head>
+<body>
+    <h1>Direct API Test</h1>
+    <button onclick="testProjectCreation()">Test Project Creation</button>
+    <div id="result"></div>
+
+    <script>
+        async function testProjectCreation() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Testing...';
+            
+            try {
+                console.log('Making POST request to create project...');
+                
+                const response = await fetch('http://localhost:8000/api/v1/projects', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: 'Direct API Test Project',
+                        description: 'Testing direct API call'
+                    })
+                });
+                
+                console.log('Response status:', response.status);
+                const data = await response.text();
+                console.log('Response data:', data);
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `<p style="color: green;">SUCCESS: ${data}</p>`;
+                } else {
+                    resultDiv.innerHTML = `<p style="color: red;">ERROR ${response.status}: ${data}</p>`;
+                }
+            } catch (error) {
+                console.error('Request failed:', error);
+                resultDiv.innerHTML = `<p style="color: red;">NETWORK ERROR: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

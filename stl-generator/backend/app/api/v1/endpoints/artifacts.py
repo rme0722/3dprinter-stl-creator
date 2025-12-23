@@ -29,7 +29,7 @@ async def list_job_artifacts(
     return result.scalars().all()
 
 
-@router.get("/{artifact_id}", response_model=ArtifactResponse)
+@router.get("/artifacts/{artifact_id}", response_model=ArtifactResponse)
 async def get_artifact(
     artifact_id: str,
     db: AsyncSession = Depends(get_db)
@@ -44,7 +44,7 @@ async def get_artifact(
     return artifact
 
 
-@router.get("/{artifact_id}/download-url")
+@router.get("/artifacts/{artifact_id}/download-url")
 async def get_artifact_download_url(
     artifact_id: str,
     db: AsyncSession = Depends(get_db)

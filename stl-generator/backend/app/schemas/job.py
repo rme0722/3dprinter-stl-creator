@@ -26,9 +26,10 @@ class JobSubmit(BaseModel):
 
 
 class QualitySummary(BaseModel):
-    input_quality: float
-    reconstruction_confidence: float
-    printability_risk: float
+    input_quality: Optional[float] = 0.0
+    reconstruction_confidence: Optional[float] = 0.0
+    printability_risk: Optional[float] = 0.0
+    reconstruction: Optional[str] = None
     notes: Optional[list[str]] = []
 
 
@@ -51,3 +52,4 @@ class JobResponse(JobBase):
 
     class Config:
         from_attributes = True
+        protected_namespaces = ()

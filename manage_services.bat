@@ -41,7 +41,7 @@ goto MENU
 :START_BACKEND
 echo.
 echo Starting Backend...
-start "3D Converter Backend" cmd /k "cd /d %BACKEND_DIR% && ..\..\venv\Scripts\activate && uvicorn app.main:app --reload --port 8000"
+start "3D Converter Backend" cmd /k "cd /d %BACKEND_DIR% && C:\Projects\3d_Printer_Converter\3dprinter-stl-creator\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000"
 echo Backend started in new window.
 pause
 goto MENU
@@ -57,6 +57,8 @@ goto MENU
 :STOP_ALL
 echo.
 echo Stopping services...
+powershell -Command "Get-NetTCPConnection -LocalPort 8000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
+powershell -Command "Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }"
 taskkill /FI "WINDOWTITLE eq 3D Converter Backend*" /F >nul 2>&1
 taskkill /FI "WINDOWTITLE eq 3D Converter Frontend*" /F >nul 2>&1
 echo Services stopped.

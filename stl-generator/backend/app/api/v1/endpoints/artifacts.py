@@ -1,11 +1,14 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.db.database import get_db
 from app.models import Artifact, Job
 from app.schemas.artifact import ArtifactResponse
+from app.services.local_storage import get_file_path
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -44,12 +47,12 @@ async def get_artifact(
     return artifact
 
 
-@router.get("/artifacts/{artifact_id}/download-url")
-async def get_artifact_download_url(
+@router.get("/artifacts/{artifact_id}/download")
+async def download_artifact(
     artifact_id: str,
     db: AsyncSession = Depends(get_db)
-) -> dict:
-    """Get a pre-signed download URL for an artifact"""
+):
+    """Download an artifact file"""
     artifact = await db.get(Artifact, artifact_id)
     if not artifact:
         raise HTTPException(
@@ -57,8 +60,53 @@ async def get_artifact_download_url(
             detail="Artifact not found"
         )
     
+    # Check if local storage
+    if artifact.uri.startswith("local://"):
+        file_path = get_file_path(artifact.uri)
+        if not file_path or not file_path.exists():
+             raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="File not found on server"
+            )
+        
+        # Determine filename
+        filename = file_path.name
+        # If we have metadata with original filename, use it
+        if artifact.metadata_json and "filename" in artifact.metadata_json:
+            filename = artifact.metadata_json["filename"]
+            
+        return FileResponse(
+            path=file_path, 
+            filename=filename,
+            media_type='application/octet-stream'
+        )
+        
+    # Fallback for S3 (not implemented locally)
+    return {
+        "download_url": f"https://storage.example.com/download/{artifact.uri}",
+        "expires_in": 3600
+    }
+
+@router.get("/artifacts/{artifact_id}/download-url")
+async def get_artifact_download_url(
+    artifact_id: str,
+    db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Get a download URL for an artifact. For local storage, returns the direct download API link."""
+    artifact = await db.get(Artifact, artifact_id)
+    if not artifact:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Artifact not found"
+        )
+    
+    if artifact.uri.startswith("local://"):
+        return {
+            "download_url": f"{settings.BASE_URL}{settings.API_V1_STR}/artifacts/{artifact.id}/download",
+            "expires_in": 3600
+        }
+    
     # TODO: Generate pre-signed S3 URL
-    # For now, return a placeholder
     return {
         "download_url": f"https://storage.example.com/download/{artifact.uri}",
         "expires_in": 3600

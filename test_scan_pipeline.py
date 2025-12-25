@@ -114,7 +114,7 @@ def test_scan_pipeline():
     artifacts = resp.json()
     stl_found = False
     for art in artifacts:
-        print(f"   Found artifact: {art['artifact_type']} ({art['filename']})")
+        print(f"   Found artifact: {art['artifact_type']} ({art['uri']})")
         if art['artifact_type'] == "FINAL_STL":
             stl_found = True
             

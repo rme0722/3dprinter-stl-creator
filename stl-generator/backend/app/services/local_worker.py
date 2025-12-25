@@ -19,6 +19,7 @@ from app.models import Job, Artifact
 from app.models.job import JobState
 from app.models.artifact import ArtifactType
 from app.services.local_storage import STORAGE_BASE, get_storage_path, get_relative_uri
+from app.services.cleanup import CleanupService
 
 # Create a separate engine for the worker to avoid session conflicts
 # Handle both PostgreSQL and SQLite URLs
@@ -100,7 +101,6 @@ class LocalWorker:
         try:
             print(f"  Job {job.id}: Starting processing ({job.pipeline_type})")
             job.state = JobState.RUNNING
-            job.started_at = datetime.utcnow()
             await db.commit()
             
             if job.pipeline_type == "RELIEF":
@@ -110,16 +110,24 @@ class LocalWorker:
             else:
                 raise ValueError(f"Unsupported pipeline type: {job.pipeline_type}")
             
-            job.state = JobState.SUCCEEDED
+            # Pipeline might have updated the state internally (e.g. to FAILED)
+            # Fetch fresh state from DB
+            await db.refresh(job)
+            
+            if job.state != JobState.FAILED:
+                job.state = JobState.SUCCEEDED
+               # Skip manual override; ScanPipeline handles its own scoring.
+            
             job.completed_at = datetime.utcnow()
-            job.quality_score = 0.85
-            job.quality_summary = {
-                "input_quality": 0.90,
-                "reconstruction_confidence": 0.85,
-                "printability_risk": 0.10,
-                "notes": ["Processing completed successfully"]
-            }
             await db.commit()
+
+            # Run storage cleanup
+            try:
+                await CleanupService.cleanup_old_jobs(db)
+                await CleanupService.cleanup_old_projects(db)
+            except Exception as e:
+                print(f"Cleanup error (non-fatal): {e}")
+
             print(f"Job {job.id} completed successfully")
             
         except Exception as e:

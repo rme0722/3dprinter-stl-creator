@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
@@ -88,6 +88,7 @@ export default function JobPage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [filePreviews, setFilePreviews] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [previousState, setPreviousState] = useState<string | null>(null)
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -144,6 +145,52 @@ export default function JobPage() {
     refetchInterval: job?.state === 'SUCCEEDED' ? false :
       ['SUBMITTED', 'VALIDATING', 'QUEUED', 'RUNNING'].includes(job?.state || '') ? 3000 : false,
   })
+
+  // Track job state changes for notification (must be after job query is defined)
+  useEffect(() => {
+    if (job?.state && previousState) {
+      // Job just completed
+      if (previousState !== 'SUCCEEDED' && job.state === 'SUCCEEDED') {
+        // Play notification sound
+        try {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+          const oscillator = audioContext.createOscillator()
+          const gainNode = audioContext.createGain()
+
+          oscillator.connect(gainNode)
+          gainNode.connect(audioContext.destination)
+
+          oscillator.frequency.value = 800
+          oscillator.type = 'sine'
+          gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+
+          oscillator.start(audioContext.currentTime)
+          oscillator.stop(audioContext.currentTime + 0.5)
+
+          // Browser notification
+          if (Notification.permission === 'granted') {
+            new Notification('Job Complete!', {
+              body: 'Your 3D model is ready to download.',
+              icon: '/favicon.ico'
+            })
+          }
+        } catch (e) {
+          console.log('Could not play notification sound:', e)
+        }
+      }
+    }
+    if (job?.state) {
+      setPreviousState(job.state)
+    }
+  }, [job?.state, previousState])
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
 
   const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number } | null>(null)
   const [isUploading, setIsUploading] = useState(false)
@@ -332,9 +379,57 @@ export default function JobPage() {
             </CardHeader>
             <CardContent>
               {isProcessing && (
-                <div className="flex items-center gap-2 text-blue-600">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Processing...</span>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 text-blue-600">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Processing with COLMAP+OpenMVS Dense Reconstruction...</span>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Pipeline Progress</span>
+                      <span className="font-medium text-blue-600">Dense MVS in progress...</span>
+                    </div>
+                    <div className="h-3 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-blue-500 via-blue-600 to-indigo-600 rounded-full relative overflow-hidden"
+                        style={{ width: '55%' }}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-pulse" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1 text-xs">
+                      <div className="text-center">
+                        <div className="w-3 h-3 bg-green-500 rounded-full mx-auto mb-1 flex items-center justify-center">
+                          <CheckCircle className="w-2 h-2 text-white" />
+                        </div>
+                        <span className="text-green-600">Features</span>
+                      </div>
+                      <div className="text-center">
+                        <div className="w-3 h-3 bg-green-500 rounded-full mx-auto mb-1 flex items-center justify-center">
+                          <CheckCircle className="w-2 h-2 text-white" />
+                        </div>
+                        <span className="text-green-600">Matching</span>
+                      </div>
+                      <div className="text-center">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full mx-auto mb-1 animate-pulse" />
+                        <span className="text-blue-600 font-medium">Dense MVS</span>
+                      </div>
+                      <div className="text-center">
+                        <div className="w-3 h-3 bg-gray-300 rounded-full mx-auto mb-1" />
+                        <span className="text-muted-foreground">Meshing</span>
+                      </div>
+                      <div className="text-center">
+                        <div className="w-3 h-3 bg-gray-300 rounded-full mx-auto mb-1" />
+                        <span className="text-muted-foreground">Export</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground bg-blue-50 p-2 rounded-lg">
+                    💡 Dense reconstruction takes 20-40 minutes for best quality. You can close this tab — we'll play a sound and send a notification when complete.
+                  </p>
                 </div>
               )}
               {isCompleted && job.state === 'SUCCEEDED' && (
@@ -544,7 +639,7 @@ export default function JobPage() {
               <CardContent>
                 <div className="text-center">
                   <div className={`text-4xl font-bold ${job.quality_score >= 0.8 ? 'text-green-500' :
-                      job.quality_score >= 0.6 ? 'text-yellow-500' : 'text-red-500'
+                    job.quality_score >= 0.6 ? 'text-yellow-500' : 'text-red-500'
                     }`}>
                     {(job.quality_score * 100).toFixed(0)}%
                   </div>

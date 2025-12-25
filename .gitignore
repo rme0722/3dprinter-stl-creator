@@ -61,4 +61,34 @@ media/
 **/alembic/versions/*.py
 !**/alembic/versions/.gitkeep
 
+# =============================================================================
+# Project-Specific
+# =============================================================================
 
+# Storage / Runtime data
+storage/
+colmap_workspaces/
+debug.log
+
+# COLMAP / OpenMVS artifacts (large binary files)
+*.ply
+*.mvs
+*.dmap
+*.bin
+fused.ply
+meshed.ply
+
+# Generated STL files (can be large)
+*.stl
+
+# Test scripts
+test_*.py
+benchmark_*/
+
+# OS files
+Thumbs.db
+desktop.ini
+
+# Temporary
+*.tmp
+temp/

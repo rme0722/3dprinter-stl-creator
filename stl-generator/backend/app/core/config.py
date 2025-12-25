@@ -10,14 +10,15 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "3D STL Generator"
     VERSION: str = "0.1.0"
     API_V1_STR: str = "/api/v1"
+    BASE_URL: str = "http://localhost:8000"
     
     # Security
     SECRET_KEY: str = "your-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     
-    # Database
-    DATABASE_URL: str = "postgresql://user:password@localhost:5432/stl_generator"
+    # Database - Use absolute path for SQLite to prevent "lost projects" on different working dirs
+    DATABASE_URL: str = "sqlite+aiosqlite:///C:/Projects/3d_Printer_Converter/3dprinter-stl-creator/stl-generator/backend/app.db"
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -48,6 +49,9 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 100
     MAX_PHOTOS_PER_JOB: int = 200
     MIN_PHOTOS_FOR_SCAN: int = 30
+    MAX_RETAINED_JOBS: int = 10
+    MAX_RETAINED_PROJECTS: int = 3
+    LOCAL_STORAGE_PATH: str = "C:/Projects/3d_Printer_Converter/storage"
     
     # Quality Thresholds
     QUALITY_SCORE_GREAT: float = 0.80

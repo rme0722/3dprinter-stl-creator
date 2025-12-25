@@ -13,28 +13,30 @@ from app.api.v1.api import api_router
 from app.db.database import engine, Base
 from app.services.local_worker import local_worker
 
-# Configure debug logging
+# Configure professional logging
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# File handler gets everything (DEBUG level)
+file_handler = logging.FileHandler('debug.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(log_format))
+
+# Console handler gets only important info (INFO level)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+
 logging.basicConfig(
     level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('debug.log'),
-        logging.StreamHandler()
-    ]
+    handlers=[file_handler, console_handler]
 )
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    log_path = Path('debug.log')
-    if log_path.exists():
-        try:
-            log_path.unlink()
-        except Exception:
-            pass
-        
     # Startup
+    # (Removed log unlinking to preserve debug info across reloads)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     

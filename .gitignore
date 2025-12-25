@@ -66,9 +66,11 @@ media/
 # =============================================================================
 
 # Storage / Runtime data
-storage/
-colmap_workspaces/
-debug.log
+**/storage/
+**/colmap_workspaces/
+**/test_colmap_output/
+**/debug.log
+.VSCodeCounter/
 
 # COLMAP / OpenMVS artifacts (large binary files)
 *.ply

@@ -30,6 +30,11 @@ logging.basicConfig(
     level=logging.DEBUG,
     handlers=[file_handler, console_handler]
 )
+
+# Suppress noisy loggers
+logging.getLogger('aiosqlite').setLevel(logging.WARNING)
+logging.getLogger('multipart.multipart').setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 

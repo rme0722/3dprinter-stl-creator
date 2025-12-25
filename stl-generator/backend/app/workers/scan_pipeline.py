@@ -60,23 +60,20 @@ class ScanPipeline:
             await self._update_job_state(JobState.RUNNING)
             
             # Step 2: Dense Reconstruction using COLMAP + OpenMVS
-            # This replaces the old sparse SfM approach
             print("[SCAN_PIPELINE] About to call _run_dense_reconstruction...")
             mesh_path = await self._run_dense_reconstruction(input_artifacts)
             print(f"[SCAN_PIPELINE] _run_dense_reconstruction returned: {mesh_path}")
             
             if mesh_path is None:
-                # Fallback to sparse SfM if COLMAP fails
-                print("[SCAN_PIPELINE] COLMAP returned None, falling back to sparse SfM")
-                logger.warning("COLMAP pipeline failed, falling back to sparse SfM")
-                pcd = await self._reconstruct_point_cloud(input_artifacts)
-                mesh = await self._mesh_from_cloud(pcd)
-                cleaned_mesh = await self._clean_mesh(mesh)
-            else:
-                # Load the mesh from COLMAP/OpenMVS output
-                logger.info(f"Loading mesh from COLMAP output: {mesh_path}")
-                mesh = trimesh.load(str(mesh_path))
-                cleaned_mesh = mesh  # Already high quality from OpenMVS
+                # No fallback - fail the job with a clear error message
+                print("[SCAN_PIPELINE] COLMAP pipeline failed - no fallback")
+                await self._fail_job("COLMAP dense reconstruction failed. Check that COLMAP is installed at C:\\Tools\\COLMAP and images are valid JPG/PNG files.")
+                return
+            
+            # Load the mesh from COLMAP/OpenMVS output
+            logger.info(f"Loading mesh from COLMAP output: {mesh_path}")
+            mesh = trimesh.load(str(mesh_path))
+            cleaned_mesh = mesh  # Already high quality from OpenMVS
             
             # Step 5: Export STL
             await self._export_stl(cleaned_mesh)
@@ -159,16 +156,17 @@ class ScanPipeline:
 
     async def _run_dense_reconstruction(self, artifacts: List[Artifact]) -> Optional[Path]:
         """
-        Run COLMAP + OpenMVS dense reconstruction pipeline.
+        Run COLMAP + OpenMVS dense reconstruction pipeline as a DETACHED process.
         
-        This is the new high-quality reconstruction path that produces
-        dense point clouds (~1M points) instead of sparse SfM (~5K points).
+        This launches a separate Python process that survives server restarts.
+        Progress is tracked via a status.json file in the workspace.
         
         Returns:
             Path to the output mesh PLY file, or None if failed.
         """
         import shutil
-        import tempfile
+        import json
+        import sys
         
         print(f"[COLMAP] Starting dense reconstruction with {len(artifacts)} images...")
         logger.info(f"Starting COLMAP dense reconstruction with {len(artifacts)} images...")
@@ -203,32 +201,76 @@ class ScanPipeline:
         
         logger.info(f"Copied {len(images_copied)} images to {image_dir}")
         
-        # Define progress callback to update job progress
-        async def progress_callback(progress: PipelineProgress):
-            logger.info(f"[COLMAP {progress.percentage}%] {progress.stage}: {progress.message}")
-            # TODO: Send WebSocket update to frontend
+        # Launch detached COLMAP process
+        status_file = workspace_dir / "status.json"
+        detached_script = Path(__file__).parent / "run_colmap_detached.py"
         
-        # Run the COLMAP + OpenMVS pipeline
-        try:
-            mesh_path = await run_colmap_pipeline(
-                image_dir=image_dir,
-                workspace_dir=workspace_dir,
-                progress_callback=progress_callback
-            )
-            
-            if mesh_path and mesh_path.exists():
-                logger.info(f"COLMAP pipeline completed successfully: {mesh_path}")
-                self.is_fallback = False
-                return mesh_path
-            else:
-                logger.warning("COLMAP pipeline returned no mesh")
+        # Use CREATE_NEW_PROCESS_GROUP on Windows to detach
+        import subprocess
+        
+        print(f"[COLMAP] Launching detached process: {detached_script}")
+        logger.info(f"Launching detached COLMAP process for job {self.job_id}")
+        
+        # Start detached process
+        creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        process = subprocess.Popen(
+            [sys.executable, str(detached_script), self.job_id, str(image_dir), str(workspace_dir)],
+            creationflags=creation_flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        
+        print(f"[COLMAP] Detached process started with PID {process.pid}")
+        logger.info(f"Detached COLMAP process started with PID {process.pid}")
+        
+        # Poll status file until completion
+        max_wait_seconds = 7200  # 2 hours max
+        poll_interval = 5  # Check every 5 seconds
+        start_time = asyncio.get_event_loop().time()
+        
+        while True:
+            elapsed = asyncio.get_event_loop().time() - start_time
+            if elapsed > max_wait_seconds:
+                logger.error("COLMAP process timed out")
                 return None
-                
-        except Exception as e:
-            logger.error(f"COLMAP pipeline failed with exception: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+            
+            # Check status file
+            if status_file.exists():
+                try:
+                    with open(status_file, 'r') as f:
+                        status = json.load(f)
+                    
+                    # Log progress
+                    stage = status.get("stage", "unknown")
+                    progress = status.get("progress", 0)
+                    print(f"[COLMAP {progress}%] {stage}")
+                    
+                    # Check for completion
+                    if status.get("status") == "completed":
+                        mesh_path = status.get("output_mesh")
+                        if mesh_path:
+                            mesh_path = Path(mesh_path)
+                            if mesh_path.exists():
+                                logger.info(f"COLMAP pipeline completed: {mesh_path}")
+                                self.is_fallback = False
+                                return mesh_path
+                        logger.warning("COLMAP completed but no mesh found")
+                        return None
+                    
+                    # Check for failure
+                    if status.get("status") == "failed":
+                        error = status.get("error", "Unknown error")
+                        logger.error(f"COLMAP pipeline failed: {error}")
+                        return None
+                        
+                except json.JSONDecodeError:
+                    pass  # Status file being written, try again
+            
+            # Wait before next poll
+            await asyncio.sleep(poll_interval)
+
 
     async def _reconstruct_point_cloud(self, artifacts: List[Artifact]) -> o3d.geometry.PointCloud:
         """

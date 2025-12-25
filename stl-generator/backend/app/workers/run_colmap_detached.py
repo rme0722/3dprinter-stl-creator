@@ -1,0 +1,311 @@
+#!/usr/bin/env python3
+"""
+Detached COLMAP Pipeline Runner
+
+This script runs as a completely independent process that survives server restarts.
+It writes progress and status to a JSON file that the backend can monitor.
+
+Usage:
+    python run_colmap_detached.py <job_id> <image_dir> <workspace_dir>
+"""
+
+import sys
+import os
+import json
+import subprocess
+import time
+from pathlib import Path
+from datetime import datetime
+
+# COLMAP path
+COLMAP_PATH = Path(r"C:\Tools\COLMAP\COLMAP-3.9.1-windows-cuda\COLMAP.bat")
+OPENMVS_PATH = Path(r"C:\Tools\OpenMVS")
+
+
+def write_status(workspace_dir: Path, status_data: dict):
+    """Write status to JSON file atomically."""
+    status_file = workspace_dir / "status.json"
+    temp_file = workspace_dir / "status.json.tmp"
+    
+    status_data["updated_at"] = datetime.now().isoformat()
+    
+    with open(temp_file, 'w') as f:
+        json.dump(status_data, f, indent=2)
+    
+    # Atomic rename
+    temp_file.replace(status_file)
+
+
+def run_colmap_command(command: str, args: list, workspace_dir: Path, status: dict) -> bool:
+    """Run a COLMAP command and return success status."""
+    cmd = [str(COLMAP_PATH), command] + [str(a) for a in args]
+    print(f"[COLMAP] Running: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            shell=True
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or result.stdout
+            print(f"[COLMAP] {command} FAILED: {error_msg[:500]}")
+            status["error"] = f"{command} failed: {error_msg[:500]}"
+            return False
+        
+        print(f"[COLMAP] {command} completed successfully")
+        return True
+    except Exception as e:
+        print(f"[COLMAP] {command} EXCEPTION: {e}")
+        status["error"] = str(e)
+        return False
+
+
+def run_openmvs_command(executable: str, args: list, mvs_dir: Path, status: dict) -> bool:
+    """Run an OpenMVS command."""
+    exe_path = OPENMVS_PATH / f"{executable}.exe"
+    cmd = [str(exe_path)] + [str(a) for a in args]
+    print(f"[OpenMVS] Running: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(mvs_dir)
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or result.stdout
+            print(f"[OpenMVS] {executable} FAILED: {error_msg[:500]}")
+            status["error"] = f"{executable} failed: {error_msg[:500]}"
+            return False
+        
+        print(f"[OpenMVS] {executable} completed successfully")
+        return True
+    except Exception as e:
+        print(f"[OpenMVS] {executable} EXCEPTION: {e}")
+        status["error"] = str(e)
+        return False
+
+
+def run_pipeline(job_id: str, image_dir: Path, workspace_dir: Path):
+    """Run the complete COLMAP + OpenMVS pipeline."""
+    
+    # Initialize status
+    status = {
+        "job_id": job_id,
+        "stage": "initializing",
+        "progress": 0,
+        "status": "running",
+        "output_mesh": None,
+        "error": None,
+        "started_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat()
+    }
+    
+    # Create directories
+    database_path = workspace_dir / "database.db"
+    sparse_dir = workspace_dir / "sparse"
+    dense_dir = workspace_dir / "dense"
+    mvs_dir = workspace_dir / "mvs"
+    
+    for d in [sparse_dir, dense_dir, mvs_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+    
+    write_status(workspace_dir, status)
+    
+    try:
+        # Stage 1: Feature Extraction (10%)
+        status["stage"] = "feature_extraction"
+        status["progress"] = 5
+        write_status(workspace_dir, status)
+        
+        if not run_colmap_command("feature_extractor", [
+            "--image_path", str(image_dir),
+            "--database_path", str(database_path),
+            "--ImageReader.single_camera", "1",
+            "--SiftExtraction.use_gpu", "0"
+        ], workspace_dir, status):
+            status["status"] = "failed"
+            write_status(workspace_dir, status)
+            return
+        
+        status["progress"] = 10
+        write_status(workspace_dir, status)
+        
+        # Stage 2: Exhaustive Matching (20%)
+        status["stage"] = "matching"
+        status["progress"] = 15
+        write_status(workspace_dir, status)
+        
+        if not run_colmap_command("exhaustive_matcher", [
+            "--database_path", str(database_path),
+            "--SiftMatching.use_gpu", "0"
+        ], workspace_dir, status):
+            status["status"] = "failed"
+            write_status(workspace_dir, status)
+            return
+        
+        status["progress"] = 20
+        write_status(workspace_dir, status)
+        
+        # Stage 3: Sparse Reconstruction (30%)
+        status["stage"] = "sparse_reconstruction"
+        status["progress"] = 25
+        write_status(workspace_dir, status)
+        
+        if not run_colmap_command("mapper", [
+            "--image_path", str(image_dir),
+            "--database_path", str(database_path),
+            "--output_path", str(sparse_dir)
+        ], workspace_dir, status):
+            status["status"] = "failed"
+            write_status(workspace_dir, status)
+            return
+        
+        status["progress"] = 30
+        write_status(workspace_dir, status)
+        
+        # Find sparse model
+        sparse_model_dir = sparse_dir / "0"
+        if not sparse_model_dir.exists():
+            model_dirs = list(sparse_dir.iterdir())
+            if model_dirs:
+                sparse_model_dir = model_dirs[0]
+            else:
+                status["error"] = "No sparse model found"
+                status["status"] = "failed"
+                write_status(workspace_dir, status)
+                return
+        
+        # Stage 4: Image Undistortion (40%)
+        status["stage"] = "undistortion"
+        status["progress"] = 35
+        write_status(workspace_dir, status)
+        
+        if not run_colmap_command("image_undistorter", [
+            "--image_path", str(image_dir),
+            "--input_path", str(sparse_model_dir),
+            "--output_path", str(dense_dir),
+            "--output_type", "COLMAP"
+        ], workspace_dir, status):
+            status["status"] = "failed"
+            write_status(workspace_dir, status)
+            return
+        
+        status["progress"] = 40
+        write_status(workspace_dir, status)
+        
+        # Stage 5: Dense Stereo (60%)
+        status["stage"] = "patch_match_stereo"
+        status["progress"] = 45
+        write_status(workspace_dir, status)
+        
+        if not run_colmap_command("patch_match_stereo", [
+            "--workspace_path", str(dense_dir),
+            "--PatchMatchStereo.geom_consistency", "true"
+        ], workspace_dir, status):
+            status["status"] = "failed"
+            write_status(workspace_dir, status)
+            return
+        
+        status["progress"] = 60
+        write_status(workspace_dir, status)
+        
+        # Stage 6: Stereo Fusion (70%)
+        status["stage"] = "fusion"
+        status["progress"] = 65
+        write_status(workspace_dir, status)
+        
+        fused_ply = dense_dir / "fused.ply"
+        if not run_colmap_command("stereo_fusion", [
+            "--workspace_path", str(dense_dir),
+            "--output_path", str(fused_ply)
+        ], workspace_dir, status):
+            status["status"] = "failed"
+            write_status(workspace_dir, status)
+            return
+        
+        status["progress"] = 70
+        write_status(workspace_dir, status)
+        
+        # Stage 7: Mesh Reconstruction (85%)
+        status["stage"] = "meshing"
+        status["progress"] = 75
+        write_status(workspace_dir, status)
+        
+        # Try OpenMVS first, fall back to COLMAP Poisson
+        scene_mvs = mvs_dir / "scene.mvs"
+        mesh_ply = None
+        
+        if run_openmvs_command("InterfaceCOLMAP", [
+            "--working-folder", str(dense_dir),
+            "--input-file", str(dense_dir),
+            "--output-file", str(scene_mvs)
+        ], mvs_dir, status):
+            # Run ReconstructMesh
+            mesh_mvs = mvs_dir / "scene_mesh.mvs"
+            if run_openmvs_command("ReconstructMesh", [
+                "--input-file", str(scene_mvs),
+                "--output-file", str(mesh_mvs)
+            ], mvs_dir, status):
+                mesh_ply = mvs_dir / "scene_mesh.ply"
+        
+        # Fallback to COLMAP Poisson
+        if mesh_ply is None or not mesh_ply.exists():
+            print("[COLMAP] OpenMVS failed, using COLMAP Poisson mesher")
+            mesh_ply = dense_dir / "meshed.ply"
+            if not run_colmap_command("poisson_mesher", [
+                "--input_path", str(fused_ply),
+                "--output_path", str(mesh_ply)
+            ], workspace_dir, status):
+                status["status"] = "failed"
+                write_status(workspace_dir, status)
+                return
+        
+        status["progress"] = 90
+        write_status(workspace_dir, status)
+        
+        # Success!
+        if mesh_ply and mesh_ply.exists():
+            status["stage"] = "completed"
+            status["progress"] = 100
+            status["status"] = "completed"
+            status["output_mesh"] = str(mesh_ply)
+            write_status(workspace_dir, status)
+            print(f"[SUCCESS] Pipeline completed! Mesh: {mesh_ply}")
+        else:
+            status["error"] = "No mesh file generated"
+            status["status"] = "failed"
+            write_status(workspace_dir, status)
+            
+    except Exception as e:
+        import traceback
+        status["error"] = str(e)
+        status["status"] = "failed"
+        print(f"[ERROR] Pipeline failed: {e}")
+        print(traceback.format_exc())
+        write_status(workspace_dir, status)
+
+
+def main():
+    if len(sys.argv) != 4:
+        print(f"Usage: {sys.argv[0]} <job_id> <image_dir> <workspace_dir>")
+        sys.exit(1)
+    
+    job_id = sys.argv[1]
+    image_dir = Path(sys.argv[2])
+    workspace_dir = Path(sys.argv[3])
+    
+    print(f"[DETACHED] Starting COLMAP pipeline for job {job_id}")
+    print(f"  Image dir: {image_dir}")
+    print(f"  Workspace: {workspace_dir}")
+    
+    run_pipeline(job_id, image_dir, workspace_dir)
+
+
+if __name__ == "__main__":
+    main()

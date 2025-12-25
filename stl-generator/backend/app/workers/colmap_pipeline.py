@@ -70,25 +70,37 @@ class ColmapMVSPipeline:
     
     async def _run_colmap(self, command: str, args: list[str]) -> bool:
         """Run a COLMAP command."""
-        cmd = [str(COLMAP_PATH), command] + args
+        # Build full command
+        cmd = [str(COLMAP_PATH), command] + [str(a) for a in args]
+        print(f"[COLMAP] Running: {' '.join(cmd)}")
         logger.debug(f"Running COLMAP: {' '.join(cmd)}")
         
-        try:
-            # Run in separate thread to not block async loop
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+        def run_sync():
+            """Run subprocess synchronously - will be called in thread."""
+            return subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                shell=True  # Required for .bat files on Windows
             )
-            stdout, stderr = await process.communicate()
+        
+        try:
+            # Run in thread to not block async loop
+            result = await asyncio.to_thread(run_sync)
             
-            if process.returncode != 0:
-                logger.error(f"COLMAP {command} failed: {stderr.decode()}")
+            if result.returncode != 0:
+                error_msg = result.stderr or result.stdout
+                print(f"[COLMAP] {command} FAILED (code {result.returncode}): {error_msg[:1000]}")
+                logger.error(f"COLMAP {command} failed: {error_msg}")
                 return False
             
-            logger.debug(f"COLMAP {command} output: {stdout.decode()[:500]}")
+            print(f"[COLMAP] {command} completed successfully")
+            logger.debug(f"COLMAP {command} output: {result.stdout[:500] if result.stdout else 'no output'}")
             return True
         except Exception as e:
+            import traceback
+            print(f"[COLMAP] {command} EXCEPTION: {e}")
+            print(traceback.format_exc())
             logger.error(f"COLMAP {command} exception: {e}")
             return False
     

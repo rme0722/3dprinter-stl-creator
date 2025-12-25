@@ -199,20 +199,63 @@ def run_pipeline(job_id: str, image_dir: Path, workspace_dir: Path):
         status["progress"] = 40
         write_status(workspace_dir, status)
         
-        # Stage 5: Dense Stereo (60%)
+        # Stage 5: Dense Stereo (60%) - with granular progress tracking
         status["stage"] = "patch_match_stereo"
         status["progress"] = 45
         write_status(workspace_dir, status)
         
-        if not run_colmap_command("patch_match_stereo", [
-            "--workspace_path", str(dense_dir),
-            "--PatchMatchStereo.geom_consistency", "true"
-        ], workspace_dir, status):
+        # Count images to estimate expected depth maps (2x for geom_consistency)
+        num_images = len(list(image_dir.glob("*.[jJ][pP][gG]"))) + len(list(image_dir.glob("*.[pP][nN][gG]")))
+        expected_depth_maps = num_images * 2  # photometric + geometric passes
+        
+        depth_maps_dir = dense_dir / "stereo" / "depth_maps"
+        
+        # Run patch_match_stereo in a thread while monitoring progress
+        import threading
+        import time
+        
+        patch_match_result = {"success": False, "error": None}
+        
+        def run_patch_match():
+            cmd = [str(COLMAP_PATH), "patch_match_stereo",
+                   "--workspace_path", str(dense_dir),
+                   "--PatchMatchStereo.geom_consistency", "true"]
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, shell=True)
+                if result.returncode != 0:
+                    patch_match_result["error"] = result.stderr or result.stdout
+                else:
+                    patch_match_result["success"] = True
+            except Exception as e:
+                patch_match_result["error"] = str(e)
+        
+        # Start patch_match in thread
+        patch_thread = threading.Thread(target=run_patch_match)
+        patch_thread.start()
+        
+        # Monitor progress while thread runs
+        while patch_thread.is_alive():
+            # Count generated depth maps
+            if depth_maps_dir.exists():
+                depth_map_count = len(list(depth_maps_dir.glob("*.bin")))
+                # Progress from 45% to 60% during this stage
+                stage_progress = min(depth_map_count / max(expected_depth_maps, 1), 1.0)
+                status["progress"] = 45 + int(stage_progress * 15)
+                status["detail"] = f"Depth maps: {depth_map_count}/{expected_depth_maps}"
+                write_status(workspace_dir, status)
+            
+            time.sleep(5)  # Update every 5 seconds
+        
+        patch_thread.join()
+        
+        if not patch_match_result["success"]:
+            status["error"] = f"patch_match_stereo failed: {patch_match_result['error'][:500] if patch_match_result['error'] else 'Unknown error'}"
             status["status"] = "failed"
             write_status(workspace_dir, status)
             return
         
         status["progress"] = 60
+        status["detail"] = None
         write_status(workspace_dir, status)
         
         # Stage 6: Stereo Fusion (70%)

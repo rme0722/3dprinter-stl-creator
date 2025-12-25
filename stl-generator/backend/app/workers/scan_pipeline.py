@@ -226,7 +226,7 @@ class ScanPipeline:
         logger.info(f"Detached COLMAP process started with PID {process.pid}")
         
         # Poll status file until completion
-        max_wait_seconds = 7200  # 2 hours max
+        max_wait_seconds = 21600  # 6 hours max (for large image sets)
         poll_interval = 5  # Check every 5 seconds
         start_time = asyncio.get_event_loop().time()
         
@@ -245,7 +245,11 @@ class ScanPipeline:
                     # Log progress
                     stage = status.get("stage", "unknown")
                     progress = status.get("progress", 0)
-                    print(f"[COLMAP {progress}%] {stage}")
+                    detail = status.get("detail", "")
+                    if detail:
+                        print(f"[COLMAP {progress}%] {stage} - {detail}")
+                    else:
+                        print(f"[COLMAP {progress}%] {stage}")
                     
                     # Check for completion
                     if status.get("status") == "completed":

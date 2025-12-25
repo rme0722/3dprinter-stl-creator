@@ -342,7 +342,6 @@ export default function JobPage() {
                 ) : (
                   <Play className="mr-2 h-4 w-4" />
                 )}
-                )}
                 {isUploading ? (
                   uploadProgress
                     ? `Uploading ${uploadProgress.current}/${uploadProgress.total}...`

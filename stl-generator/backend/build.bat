@@ -39,9 +39,13 @@ copy requirements.txt "%BUILD_DIR%\backend\"
 
 echo.
 echo [4/7] Copying frontend standalone build...
-xcopy /E /I /Y "..\frontend\.next\standalone" "%BUILD_DIR%\frontend"
-xcopy /E /I /Y "..\frontend\.next\static" "%BUILD_DIR%\frontend\.next\static"
-xcopy /E /I /Y "..\frontend\public" "%BUILD_DIR%\frontend\public"
+xcopy /E /I /Y /H "..\frontend\.next\standalone" "%BUILD_DIR%\frontend"
+REM Ensure .next subfolder is copied (may be needed due to xcopy quirks with dot-folders)
+xcopy /E /I /Y /H "..\frontend\.next\standalone\.next" "%BUILD_DIR%\frontend\.next"
+REM Ensure node_modules is copied
+xcopy /E /I /Y /H "..\frontend\.next\standalone\node_modules" "%BUILD_DIR%\frontend\node_modules"
+xcopy /E /I /Y /H "..\frontend\.next\static" "%BUILD_DIR%\frontend\.next\static"
+xcopy /E /I /Y /H "..\frontend\public" "%BUILD_DIR%\frontend\public"
 
 echo.
 echo [5/7] Downloading Node.js...
@@ -64,33 +68,57 @@ REM Create main launcher
 echo @echo off
 echo setlocal
 echo set ROOT=%%~dp0
-echo set PATH=%%ROOT%%python;%%ROOT%%node;%%ROOT%%tools\COLMAP;%%ROOT%%tools\OpenMVS;%%PATH%%
+echo set PATH=%%ROOT%%python;%%ROOT%%node;%%ROOT%%tools\COLMAP\COLMAP-3.9.1-windows-cuda;%%ROOT%%tools\OpenMVS;%%PATH%%
 echo.
-echo echo Starting STL Creator...
 echo echo.
-echo echo Backend: http://localhost:8000
-echo echo Frontend: http://localhost:3000
+echo echo  ____  _____ _       ____                _
+echo echo / ___^^^|^^^|_   _^^^| ^^^|     / ___^^^|_ __ ___  __ _^^^| ^^^|_ ___  _ __
+echo echo \___ \  ^^^| ^^^| ^^^| ^^^|    ^^^| ^^^|   ^^^| '__/ _ \/ _` ^^^| __/ _ \^^^| '__^^^|
+echo echo  ___^) ^^^| ^^^| ^^^| ^^^| ^^^|___ ^^^| ^^^|___^^^| ^^^| ^^^|  __/ ^(_^^^| ^^^| ^^^|^^^| ^(_^) ^^^| ^^^|
+echo echo ^^^|____/  ^^^|_^^^| ^^^|_____^^^| \____^^^|_^^^|  \___^^^|\__,_^^^|\__\___/^^^|_^^^|
 echo echo.
-echo.
-echo start "Backend" /D "%%ROOT%%backend" "%%ROOT%%python\python.exe" -m uvicorn app.main:app --port 8000
-echo timeout /t 3 /nobreak ^>nul
-echo start "Frontend" /D "%%ROOT%%frontend" "%%ROOT%%node\node.exe" server.js
-echo timeout /t 2 /nobreak ^>nul
+echo echo  Photo to 3D Model Converter
+echo echo  ============================================
+echo echo.
+echo echo Starting backend server...
+echo cd /d "%%ROOT%%backend"
+echo start "STL Creator Backend" /MIN "%%ROOT%%python\python.exe" -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+echo echo Waiting for backend to start...
+echo timeout /t 5 /nobreak ^^^>nul
+echo echo Starting frontend server...
+echo cd /d "%%ROOT%%frontend"
+echo start "STL Creator Frontend" /MIN "%%ROOT%%node\node.exe" server.js
+echo echo Waiting for frontend to start...
+echo timeout /t 3 /nobreak ^^^>nul
+echo echo.
+echo echo ============================================
+echo echo  STL Creator is now running!
+echo echo ============================================
+echo echo.
+echo echo  Open your browser to: http://localhost:3000
+echo echo.
+echo echo  To stop: Close this window or run Stop-STL-Creator.bat
+echo echo.
 echo start http://localhost:3000
-echo.
+echo echo Press any key to stop STL Creator...
+echo pause ^^^>nul
 echo echo.
-echo echo STL Creator is running!
-echo echo Close this window to stop the application.
-echo pause
+echo echo Stopping STL Creator...
+echo taskkill /F /IM python.exe 2^^^>nul
+echo taskkill /F /IM node.exe 2^^^>nul
+echo taskkill /F /IM colmap.exe 2^^^>nul
+echo echo Done!
+echo endlocal
 ) > %BUILD_DIR%\Start-STL-Creator.bat
 
 REM Create stop script
 (
 echo @echo off
 echo echo Stopping STL Creator...
-echo taskkill /F /IM python.exe 2^>nul
-echo taskkill /F /IM node.exe 2^>nul
-echo echo Done.
+echo taskkill /F /IM python.exe 2^^^>nul
+echo taskkill /F /IM node.exe 2^^^>nul
+echo taskkill /F /IM colmap.exe 2^^^>nul
+echo echo Done!
 ) > %BUILD_DIR%\Stop-STL-Creator.bat
 
 echo.

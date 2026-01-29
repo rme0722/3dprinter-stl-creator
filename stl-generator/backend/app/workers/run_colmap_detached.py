@@ -14,12 +14,101 @@ import os
 import json
 import subprocess
 import time
+import shutil
 from pathlib import Path
 from datetime import datetime
 
-# COLMAP path
-COLMAP_PATH = Path(r"C:\Tools\COLMAP\COLMAP-3.9.1-windows-cuda\COLMAP.bat")
-OPENMVS_PATH = Path(r"C:\Tools\OpenMVS")
+
+def get_colmap_path() -> Path:
+    """Get COLMAP path from env var, config, local tools, or system PATH."""
+    # 1. Environment variable
+    if env := os.environ.get("COLMAP_PATH"):
+        return Path(env)
+    
+    # 2. Try importing from config (may fail if running standalone)
+    try:
+        # Add parent dirs to path for standalone execution
+        script_dir = Path(__file__).parent
+        backend_dir = script_dir.parent.parent
+        sys.path.insert(0, str(backend_dir))
+        from app.core.config import settings
+        if settings.COLMAP_PATH:
+            return Path(settings.COLMAP_PATH)
+    except Exception:
+        pass
+    
+    # 3. Local tools folder
+    project_root = Path(__file__).parents[4]
+    local_colmap = project_root / "tools" / "COLMAP"
+    if local_colmap.exists():
+        for bat in local_colmap.rglob("COLMAP.bat"):
+            return bat
+    
+    # 4. System install location
+    system_colmap = Path(r"C:\Tools\COLMAP")
+    if system_colmap.exists():
+        for bat in system_colmap.rglob("COLMAP.bat"):
+            return bat
+    
+    # 5. System PATH
+    if which := shutil.which("colmap"):
+        return Path(which)
+    
+    raise RuntimeError("COLMAP not found. Set COLMAP_PATH environment variable or install COLMAP.")
+
+
+def get_openmvs_path() -> Path:
+    """Get OpenMVS path from env var, config, local tools, or system PATH."""
+    # 1. Environment variable
+    if env := os.environ.get("OPENMVS_PATH"):
+        return Path(env)
+    
+    # 2. Try importing from config
+    try:
+        script_dir = Path(__file__).parent
+        backend_dir = script_dir.parent.parent
+        sys.path.insert(0, str(backend_dir))
+        from app.core.config import settings
+        if settings.OPENMVS_PATH:
+            return Path(settings.OPENMVS_PATH)
+    except Exception:
+        pass
+    
+    # 3. Local tools folder
+    project_root = Path(__file__).parents[4]
+    local_openmvs = project_root / "tools" / "OpenMVS"
+    if local_openmvs.exists():
+        return local_openmvs
+    
+    # 4. System install location
+    system_openmvs = Path(r"C:\Tools\OpenMVS")
+    if system_openmvs.exists():
+        return system_openmvs
+    
+    # 5. System PATH - check for InterfaceCOLMAP
+    if which := shutil.which("InterfaceCOLMAP"):
+        return Path(which).parent
+    
+    raise RuntimeError("OpenMVS not found. Set OPENMVS_PATH environment variable or install OpenMVS.")
+
+
+# Lazy-loaded paths (computed on first use)
+_COLMAP_PATH = None
+_OPENMVS_PATH = None
+
+def COLMAP_PATH() -> Path:
+    global _COLMAP_PATH
+    if _COLMAP_PATH is None:
+        _COLMAP_PATH = get_colmap_path()
+    return _COLMAP_PATH
+
+def OPENMVS_PATH() -> Path:
+    global _OPENMVS_PATH
+    if _OPENMVS_PATH is None:
+        _OPENMVS_PATH = get_openmvs_path()
+    return _OPENMVS_PATH
+
+
 
 
 def write_status(workspace_dir: Path, status_data: dict):
@@ -38,7 +127,7 @@ def write_status(workspace_dir: Path, status_data: dict):
 
 def run_colmap_command(command: str, args: list, workspace_dir: Path, status: dict) -> bool:
     """Run a COLMAP command and return success status."""
-    cmd = [str(COLMAP_PATH), command] + [str(a) for a in args]
+    cmd = [str(COLMAP_PATH()), command] + [str(a) for a in args]
     print(f"[COLMAP] Running: {' '.join(cmd)}")
     
     try:
@@ -65,7 +154,7 @@ def run_colmap_command(command: str, args: list, workspace_dir: Path, status: di
 
 def run_openmvs_command(executable: str, args: list, mvs_dir: Path, status: dict) -> bool:
     """Run an OpenMVS command."""
-    exe_path = OPENMVS_PATH / f"{executable}.exe"
+    exe_path = OPENMVS_PATH() / f"{executable}.exe"
     cmd = [str(exe_path)] + [str(a) for a in args]
     print(f"[OpenMVS] Running: {' '.join(cmd)}")
     
@@ -217,7 +306,8 @@ def run_pipeline(job_id: str, image_dir: Path, workspace_dir: Path):
         patch_match_result = {"success": False, "error": None}
         
         def run_patch_match():
-            cmd = [str(COLMAP_PATH), "patch_match_stereo",
+            colmap_exe = COLMAP_PATH()  # Get path before entering thread
+            cmd = [str(colmap_exe), "patch_match_stereo",
                    "--workspace_path", str(dense_dir),
                    "--PatchMatchStereo.geom_consistency", "true"]
             try:

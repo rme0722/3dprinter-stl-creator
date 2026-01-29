@@ -1,7 +1,15 @@
 import json
+import os
+from pathlib import Path
 from typing import List, Optional, Union
-from pydantic import AnyHttpUrl, field_validator
+from pydantic import AnyHttpUrl, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Compute paths relative to this file's location
+_THIS_FILE = Path(__file__).resolve()
+_BACKEND_DIR = _THIS_FILE.parent.parent.parent  # backend/
+_PROJECT_ROOT = _BACKEND_DIR.parent.parent  # 3dprinter-stl-creator/
 
 
 class Settings(BaseSettings):
@@ -17,8 +25,8 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     
-    # Database - Use absolute path for SQLite to prevent "lost projects" on different working dirs
-    DATABASE_URL: str = "sqlite+aiosqlite:///C:/Projects/3d_Printer_Converter/3dprinter-stl-creator/stl-generator/backend/app.db"
+    # Database - computed relative to backend dir, overridable via DATABASE_URL env var
+    DATABASE_URL: str = ""
     
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -51,7 +59,13 @@ class Settings(BaseSettings):
     MIN_PHOTOS_FOR_SCAN: int = 30
     MAX_RETAINED_JOBS: int = 10
     MAX_RETAINED_PROJECTS: int = 3
-    LOCAL_STORAGE_PATH: str = "C:/Projects/3d_Printer_Converter/storage"
+    
+    # Storage path - computed relative to project root, overridable via LOCAL_STORAGE_PATH env var
+    LOCAL_STORAGE_PATH: str = ""
+    
+    # Tool paths - overridable via env vars COLMAP_PATH and OPENMVS_PATH
+    COLMAP_PATH: str = ""
+    OPENMVS_PATH: str = ""
     
     # Quality Thresholds
     QUALITY_SCORE_GREAT: float = 0.80
@@ -71,5 +85,42 @@ class Settings(BaseSettings):
     GEN_WEIGHT_RECON: float = 0.50
     GEN_WEIGHT_PRINT: float = 0.30
 
+    @model_validator(mode="after")
+    def compute_dynamic_paths(self) -> "Settings":
+        """Compute paths relative to project structure if not set via env vars."""
+        # Database URL - relative to backend directory
+        if not self.DATABASE_URL:
+            db_path = _BACKEND_DIR / "app.db"
+            self.DATABASE_URL = f"sqlite+aiosqlite:///{db_path.as_posix()}"
+        
+        # Storage path - relative to project root (3dprinter-stl-creator/storage)
+        if not self.LOCAL_STORAGE_PATH:
+            self.LOCAL_STORAGE_PATH = str(_PROJECT_ROOT / "storage")
+        
+        # Tool paths - check local tools/ folder, then common install locations
+        if not self.COLMAP_PATH:
+            local_colmap = _PROJECT_ROOT / "tools" / "COLMAP"
+            system_colmap = Path(r"C:\Tools\COLMAP")
+            if local_colmap.exists():
+                # Find COLMAP.bat in subdirectory
+                for bat in local_colmap.rglob("COLMAP.bat"):
+                    self.COLMAP_PATH = str(bat)
+                    break
+            elif system_colmap.exists():
+                for bat in system_colmap.rglob("COLMAP.bat"):
+                    self.COLMAP_PATH = str(bat)
+                    break
+        
+        if not self.OPENMVS_PATH:
+            local_openmvs = _PROJECT_ROOT / "tools" / "OpenMVS"
+            system_openmvs = Path(r"C:\Tools\OpenMVS")
+            if local_openmvs.exists():
+                self.OPENMVS_PATH = str(local_openmvs)
+            elif system_openmvs.exists():
+                self.OPENMVS_PATH = str(system_openmvs)
+        
+        return self
+
 
 settings = Settings()
+

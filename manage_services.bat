@@ -41,7 +41,7 @@ goto MENU
 :START_BACKEND
 echo.
 echo Starting Backend...
-start "3D Converter Backend" cmd /k "cd /d %BACKEND_DIR% && C:\Projects\3d_Printer_Converter\3dprinter-stl-creator\venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000"
+start "3D Converter Backend" cmd /k "cd /d %BACKEND_DIR% && %PROJECT_ROOT%venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000"
 echo Backend started in new window.
 pause
 goto MENU

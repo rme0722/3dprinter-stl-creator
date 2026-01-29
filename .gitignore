@@ -1,3 +1,7 @@
+# Release artifacts (large files, built by CI)
+*.zip
+dist/
+
 # Python
 __pycache__/
 *.py[cod]
@@ -71,6 +75,11 @@ media/
 **/test_colmap_output/
 **/debug.log
 .VSCodeCounter/
+
+# Local tool installations (large binaries)
+tools/COLMAP/
+tools/OpenMVS/
+!tools/README.md
 
 # COLMAP / OpenMVS artifacts (large binary files)
 *.ply

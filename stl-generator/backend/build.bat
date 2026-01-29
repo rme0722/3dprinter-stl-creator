@@ -6,7 +6,7 @@ REM ============================================================================
 
 setlocal enabledelayedexpansion
 
-set BUILD_DIR=dist\STL-Creator
+set BUILD_DIR=..\..\dist\STL-Creator
 set PYTHON_EMBED_URL=https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip
 set NODE_URL=https://nodejs.org/dist/v20.10.0/node-v20.10.0-win-x64.zip
 
@@ -57,8 +57,25 @@ del node.zip
 
 echo.
 echo [6/7] Copying COLMAP and OpenMVS...
-xcopy /E /I /Y "C:\Tools\COLMAP" "%BUILD_DIR%\tools\COLMAP"
-xcopy /E /I /Y "C:\Tools\OpenMVS" "%BUILD_DIR%\tools\OpenMVS"
+REM Try local tools folder first, then system location
+if exist "..\..\tools\COLMAP" (
+    xcopy /E /I /Y "..\..\tools\COLMAP" "%BUILD_DIR%\tools\COLMAP"
+) else if exist "C:\Tools\COLMAP" (
+    xcopy /E /I /Y "C:\Tools\COLMAP" "%BUILD_DIR%\tools\COLMAP"
+) else (
+    echo WARNING: COLMAP not found in tools\ or C:\Tools\COLMAP
+    echo The built application will require COLMAP to be installed separately.
+)
+
+if exist "..\..\tools\OpenMVS" (
+    xcopy /E /I /Y "..\..\tools\OpenMVS" "%BUILD_DIR%\tools\OpenMVS"
+) else if exist "C:\Tools\OpenMVS" (
+    xcopy /E /I /Y "C:\Tools\OpenMVS" "%BUILD_DIR%\tools\OpenMVS"
+) else (
+    echo WARNING: OpenMVS not found in tools\ or C:\Tools\OpenMVS
+    echo The built application will require OpenMVS to be installed separately.
+)
+
 
 echo.
 echo [7/7] Creating launcher scripts...
